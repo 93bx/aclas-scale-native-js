@@ -1,0 +1,55 @@
+{
+  "name": "@93bx/aclas-scale-native-js",
+  "version": "0.1.0",
+  "description": "Node.js/TypeScript client for AClas Link69 / Link66 label-weighing scales over UDP",
+  "keywords": [
+    "aclas",
+    "link69",
+    "link66",
+    "scale",
+    "label scale",
+    "barcode scale",
+    "weighing scale",
+    "udp",
+    "iot"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && NODE_OPTIONS= node tests/smoke.mjs",
+    "verify:crc": "npm run build && node scripts/verify-crc.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "author": "93bx",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/93bx/aclas-scale-native-js.git"
+  },
+  "homepage": "https://github.com/93bx/aclas-scale-native-js#readme",
+  "bugs": {
+    "url": "https://github.com/93bx/aclas-scale-native-js/issues"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^22.15.21",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17"
+  }
+}
