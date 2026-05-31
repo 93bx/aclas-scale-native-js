@@ -11,6 +11,67 @@ Protocol reverse-engineered from Wireshark captures of an AClas LS5Z7 scale.
 
 ---
 
+## What's new in 0.2.0
+
+This is a **breaking** release that fixes two protocol issues uncovered by live
+testing on 2026-05-31. Upgrading from `0.1.x` requires changes if you set PLU
+prices in your application.
+
+### Fixes
+
+- **PLU download silently dropped by the scale for `LFCode ≥ 100`** — the
+  `98 2e` packet CRC range was wrong. The CRC now covers `buf[13..525]` (which
+  includes the LFCode HIGH byte at `buf[14]`), matching every captured Link69
+  packet (5/5 in capture 14, 30/30 in capture 14B). Previously a CRC that
+  excluded `buf[14]` produced wrong checksums whenever `buf[14] != 0`, so the
+  scale dropped those packets without an ACK and the client saw a 5-second UDP
+  receive timeout. `LFCode < 100` packets happened to verify because a leading
+  zero byte does not change a CCITT-FALSE CRC. Symptom: `setScalePLUs` worked
+  for `LFCode 1–99` and timed out for `LFCode 100–9999`.
+
+### Breaking API changes
+
+- **`unitPrice` and `memberPrice` are now integers 0–9999**, stored as-is in
+  BCD at `rec[139-140]` and `rec[250-251]`. There is no implicit `×100` (cents)
+  conversion on the wire. Decimal placement is governed by the scale's own
+  display setting.
+
+  | Before (0.1.x) | After (0.2.0) | Wire bytes |
+  | --- | --- | --- |
+  | `unitPrice: 15.00`   | `unitPrice: 1500` | `[0x15, 0x00]` |
+  | `unitPrice: 0.15`    | `unitPrice: 15`   | `[0x00, 0x15]` |
+  | `unitPrice: 99.99`   | `unitPrice: 9999` | `[0x99, 0x99]` |
+
+  The decoder side (`decodePluRecord` / `getScalePLUs`) is symmetric: it now
+  returns the raw integer instead of dividing by 100. The previous "cents"
+  interpretation was a misread of the same evidence — Link69 PC also reads back
+  the raw value, which is why setting `unitPrice: 10` in 0.1.x and reading via
+  Link69 showed `1001` (storing 1000 cents) instead of `10`.
+
+  **Migration:** if your old code did `unitPrice: dollars`, change it to
+  `unitPrice: Math.round(dollars * 100)` (or just type the integer you want the
+  scale to display).
+
+- **`lfCode` now accepts 0–9999** (was effectively 0–99 in 0.1.x — the high byte
+  was missing from the wire). 2-byte BCD split across `buf[14]` (header) and
+  `rec[0]` (record body). Calling `buildDownloadPluPacket` / `setScalePLUs`
+  with `lfCode > 9999` throws `RangeError`.
+
+- **`code` now accepts 0–999999** (3-byte BCD at `rec[8-10]`; was effectively
+  0–99 in 0.1.x).
+
+- **`name1` / `name2` are encoded as Windows-1256 (CP-1256)**, supporting
+  Arabic characters. ASCII-only text is byte-for-byte identical to the previous
+  ASCII encoding, so existing English-only PLUs continue to work unchanged.
+
+### Internal
+
+- New regression tests lock in the CRC range against captures 14/14B and the
+  new `unitPrice` integer semantics (`tests/plu-encoding.mjs`, 23/23 pass).
+- `scripts/verify_crc.py` now exercises the `buf[14] != 0` cases too.
+
+---
+
 ## Requirements
 
 - **Node.js ≥ 18**
@@ -41,9 +102,9 @@ await scale.setScalePLUs([{
   code:             100,
   barcodeStartCode: 99,
   name1:            'Fresh Apples',
-  unitPrice:        3.50,
-  unitId:           4,     // 4 = kg
-  barcodeType1:     1,
+  unitPrice:        350,    // integer 0–9999, stored as-is; scale's decimal setting governs display
+  unitId:           4,      // 4 = kg
+  barcodeType1:     7,      // 7 = EAN-13 weight (Link69 default)
 }]);
 
 // Read PLUs back from the scale
@@ -102,8 +163,8 @@ Download PLU records to the scale (op `98 2e`). Sends a clock sync first unless
 
 ```typescript
 await scale.setScalePLUs([
-  { lfCode: 1, code: 100, barcodeStartCode: 99, name1: 'Banana', unitPrice: 1.20, unitId: 4, barcodeType1: 1 },
-  { lfCode: 2, code: 200, barcodeStartCode: 99, name1: 'Apple',  unitPrice: 3.50, unitId: 4, barcodeType1: 1 },
+  { lfCode: 1, code: 100, barcodeStartCode: 99, name1: 'Banana', unitPrice: 120, unitId: 4, barcodeType1: 7 },
+  { lfCode: 2, code: 200, barcodeStartCode: 99, name1: 'Apple',  unitPrice: 350, unitId: 4, barcodeType1: 7 },
 ]);
 ```
 
@@ -119,21 +180,21 @@ Clear all PLU Info on the scale (op `98 30` — "Clear Device Data → PLU Info"
 
 ```typescript
 interface PluRecord {
-  lfCode:            number;   // BCD-encoded wire ID (1–99)
-  code:              number;   // Receipt/report code
-  barcodeStartCode:  number;   // BCD, e.g. 99
-  name1:             string;   // Up to 20 ASCII chars
-  unitPrice:         number;   // Decimal price, e.g. 9.99
+  lfCode:            number;   // 0–9999. 2-byte BCD split across packet header buf[14] and rec[0]
+  code:              number;   // 0–999999. 3-byte BCD at rec[8-10]
+  barcodeStartCode:  number;   // BCD, e.g. 99 (typical EAN-13 weight prefix)
+  name1:             string;   // Up to 20 chars, Windows-1256 (CP-1256) — supports Arabic
+  unitPrice:         number;   // Integer 0–9999, stored as-is (no implicit ×100). 1500 → "1500"; 15 → "15"
   unitId:            number;   // 1=g, 4=kg (see UnitPrintRecord for custom names)
-  barcodeType1:      number;   // Binary type ID (e.g. 1=EAN13, 11=Code128)
+  barcodeType1:      number;   // Binary type ID (e.g. 1=EAN13, 7=EAN13 weight, 11=Code128)
   // optional
   categoryId?:       number;
-  name2?:            string;   // Up to 20 ASCII chars
-  memberPrice?:      number;
+  name2?:            string;   // Up to 20 chars, Windows-1256 (CP-1256)
+  memberPrice?:      number;   // Integer 0–9999, same semantics as unitPrice
   shelfDate?:        number;   // Shelf life in days
   mainLabelId?:      number;
-  tare?:             number;   // Grams (BCD)
-  tax1Percent?:      number;   // Percentage (BCD)
+  tare?:             number;   // Grams (BCD, 0–99)
+  tax1Percent?:      number;   // Percentage (BCD, 0–99)
   message1Id?:       number;
 }
 ```
@@ -320,7 +381,13 @@ import {
 - All communication is **UDP port 5002** — there is no TCP.
 - Tested against an **AClas LS5Z7** scale running firmware V7.429.
 - **CRC:** CRC-16/CCITT-FALSE (poly 0x1021, init 0x0000), big-endian on wire.
-- **BCD encoding:** price 10.00 → `[0x10, 0x00]`; value 15 → `0x15`.
+  PLU packets (`98 2e` / `60 2e`) compute CRC over `buf[13..525]`, which
+  **includes `buf[14]` (LFCode HIGH byte)**.
+- **BCD encoding:** integers are packed BCD, two decimal digits per byte.
+  `unitPrice: 1500 → [0x15, 0x00]`; `unitPrice: 15 → [0x00, 0x15]`; single-byte
+  fields like `tare: 15 → 0x15`. Prices are stored as-is — the scale's own
+  display setting (firmware-side) determines whether `1500` renders as `1500`
+  or `15.00`.
 - **Department↔PLU mapping:** departments are assigned to *categories*, not
   directly to PLUs. Set `categoryId` on a PLU and download the category/dept
   tables separately.

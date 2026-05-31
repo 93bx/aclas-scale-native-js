@@ -1,6 +1,6 @@
 {
   "name": "@93bx/aclas-scale-native-js",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Node.js/TypeScript client for AClas Link69 / Link66 label-weighing scales over UDP",
   "keywords": [
     "aclas",
