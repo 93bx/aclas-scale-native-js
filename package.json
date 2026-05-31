@@ -1,6 +1,6 @@
 {
   "name": "@93bx/aclas-scale-native-js",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Node.js/TypeScript client for AClas Link69 / Link66 label-weighing scales over UDP",
   "keywords": [
     "aclas",
@@ -27,7 +27,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && NODE_OPTIONS= node tests/smoke.mjs",
+    "test": "npm run build && node tests/plu-encoding.mjs && NODE_OPTIONS= node tests/smoke.mjs",
+    "test:offline": "npm run build && node tests/plu-encoding.mjs",
     "verify:crc": "npm run build && node scripts/verify-crc.mjs",
     "prepublishOnly": "npm run build"
   },

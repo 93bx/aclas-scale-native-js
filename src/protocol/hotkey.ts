@@ -7,8 +7,22 @@ const HOTKEY_SLOTS = 160;
 
 export { HOTKEY_RECORD_SIZE, HOTKEY_SLOTS };
 
-/** Encode one 4-byte hotkey record.  Empty key: lfCode = 0 → [00 00 00 00]. */
+/**
+ * Encode one 4-byte hotkey record.  Empty key: lfCode = 0 → [00 00 00 00].
+ *
+ * The hotkey wire record only has a single BCD byte at `rec[2]` for the LFCode,
+ * so it is limited to LFCode 0–99 — this is a wire-protocol limit, not a
+ * library limit. PLU records support LFCode 0–9999 via the multi-byte field
+ * at rec[139-140]; pointing a hotkey at a high-LFCode PLU is unsupported on
+ * the wire and would require a different (still-undecoded) hotkey op code.
+ */
 export function encodeHotkeyRecord(lfCode: number): Buffer {
+  if (lfCode < 0 || lfCode > 99 || !Number.isInteger(lfCode)) {
+    throw new RangeError(
+      `Hotkey lfCode ${lfCode} out of wire range (0–99). ` +
+      `The 4-byte hotkey record holds a single BCD byte; LFCode > 99 is not yet supported for hotkeys.`,
+    );
+  }
   const rec = Buffer.alloc(HOTKEY_RECORD_SIZE, 0);
   if (lfCode > 0) {
     rec[2] = toBcdByte(lfCode);

@@ -32,9 +32,20 @@ export function appendPacketCrcBe(buf: Buffer, bodyStart = 13): Buffer {
   return buf;
 }
 
-/** PLU download (98 2e): CRC over the 512-byte record only (bytes 15..525 exclusive). */
+/**
+ * PLU download (98 2e): CRC over buf[13 .. 525] (big-endian into the last 2 bytes).
+ *
+ * The CRC range starts at offset 13 — the same convention as `appendPacketCrcBe`
+ * — which means it COVERS buf[14], the LFCode HIGH BCD byte. This was confirmed
+ * by recomputing CRCs against captures 14 and 14B: for every packet with
+ * buf[14] != 0 (LFCode >= 100), only a CRC that includes buf[14] matches the
+ * scale's expected value (30/30 on cap 14B). A CRC starting at offset 15 only
+ * matched when buf[14] == 0 (LFCode < 100), because a leading zero byte does not
+ * change a CCITT-FALSE CRC. Starting at offset 15 silently produced wrong CRCs
+ * for LFCode >= 100, so the scale dropped those packets without ACK (timeout).
+ */
 export function appendPluPacketCrc(buf: Buffer): Buffer {
-  writeCrc16Be(buf, buf.length - 2, buf.subarray(15, buf.length - 2));
+  writeCrc16Be(buf, buf.length - 2, buf.subarray(13, buf.length - 2));
   return buf;
 }
 

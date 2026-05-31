@@ -302,8 +302,8 @@ export class AclasScale {
       if (readOpCode(resp) !== OP_UPLOAD_PLU || resp.length < 527) {
         throw new ScaleError(`Upload PLU: expected 527-byte 60 2e packet`, OP_UPLOAD_PLU, seq);
       }
-      const rec = extractPluFromUploadPacket(resp);
-      results.push(decodePluRecord(rec));
+      const { record, lfCodeHighBcd } = extractPluFromUploadPacket(resp);
+      results.push(decodePluRecord(record, lfCodeHighBcd));
     }
     return results;
   }

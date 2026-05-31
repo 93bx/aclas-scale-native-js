@@ -21,12 +21,14 @@
  *   T5  uploadPLUs()         — 60 33+60 2e; reads current scale PLU table
  *   T6  downloadPLUs()       — 98 2e; writes one smoke-test PLU (LFCode 99)
  *   T7  uploadPLUs() verify  — confirms smoke PLU round-tripped correctly
+ *   T7b downloadPLUs() + uploadPLUs() — extended PLU (LFCode=9999, Code=99999, unitPrice=1234, Arabic Name2)
  *   T8  downloadDepartments() — 98 14; writes one dept row
  *   T9  downloadCategories()  — 98 15; writes one category row
  *   T10 downloadHotkeys()     — 98 12; writes one hotkey slot
  *
- * The smoke PLU (LFCode=99, name "SMOKE TEST", price 9.99) is left on the
- * scale after the test. Delete it from Link69 if you don't want it.
+ * The smoke PLU (LFCode=99, name "SMOKE TEST", price 9.99) and the extended
+ * PLU (LFCode=9999, name "EXTENDED", name2 "احمد") are left on the scale
+ * after the test. Delete them from Link69 if you don't want them.
  */
 
 import { readFileSync } from "node:fs";
@@ -79,9 +81,24 @@ const SMOKE_PLU = {
   code:             9900,
   barcodeStartCode: 99,
   name1:            "SMOKE TEST",
-  unitPrice:        9.99,
-  memberPrice:      8.50,
+  unitPrice:        999,    // integer 0–9999, stored as-is in BCD
+  memberPrice:      850,
   unitId:           1,      // 1 = grams
+  barcodeType1:     1,
+  categoryId:       1,
+  shelfDate:        30,
+};
+
+// Extended PLU: exercises LFCode > 99 (2-byte BCD across header[14]+rec[0]),
+// Code > 99 (3-byte BCD), Arabic Name2 (CP-1256), and a multi-digit price.
+const EXTENDED_PLU = {
+  lfCode:           9999,
+  code:             99999,
+  barcodeStartCode: 99,
+  name1:            "EXTENDED",
+  name2:            "احمد",   // Arabic, CP-1256 → c7 cd e3 cf
+  unitPrice:        1234,
+  unitId:           1,
   barcodeType1:     1,
   categoryId:       1,
   shelfDate:        30,
@@ -183,9 +200,28 @@ await run("T7  uploadPLUs()  [verify smoke PLU round-trip]", async () => {
     plu.name1.trim() === SMOKE_PLU.name1,
     `name1 mismatch: got "${plu.name1.trim()}" expected "${SMOKE_PLU.name1}"`,
   );
-  const priceDiff = Math.abs((plu.unitPrice ?? 0) - SMOKE_PLU.unitPrice);
-  assert(priceDiff < 0.01, `unitPrice mismatch: got ${plu.unitPrice} expected ${SMOKE_PLU.unitPrice}`);
+  assert((plu.unitPrice ?? 0) === SMOKE_PLU.unitPrice,
+    `unitPrice mismatch: got ${plu.unitPrice} expected ${SMOKE_PLU.unitPrice}`);
   return `name="${plu.name1.trim()}"  price=${plu.unitPrice}  unitId=${plu.unitId}`;
+});
+
+// ── T7b: extended PLU round-trip (LFCode 9999 + Code 99999 + Price 12.34 + Arabic) ─
+await run("T7b downloadPLUs() + uploadPLUs()  [lfCode=9999, code=99999, unitPrice=1234, name2=Arabic]", async () => {
+  await scale.setScalePLUs([EXTENDED_PLU], { syncClock: false });
+  await new Promise((r) => setTimeout(r, 300));
+  await scale.connect();
+  const plus = await scale.getScalePLUs({ syncClock: false });
+  const plu = plus.find((p) => p.lfCode === EXTENDED_PLU.lfCode);
+  assert(plu, `LFCode=${EXTENDED_PLU.lfCode} not found in upload result`);
+  assert(plu.code === EXTENDED_PLU.code,
+    `code mismatch: got ${plu.code} expected ${EXTENDED_PLU.code}`);
+  assert(plu.name1.trim() === EXTENDED_PLU.name1,
+    `name1 mismatch: got "${plu.name1.trim()}" expected "${EXTENDED_PLU.name1}"`);
+  assert(plu.name2 === EXTENDED_PLU.name2,
+    `name2 mismatch: got "${plu.name2}" expected "${EXTENDED_PLU.name2}"`);
+  assert(plu.unitPrice === EXTENDED_PLU.unitPrice,
+    `unitPrice mismatch: got ${plu.unitPrice} expected ${EXTENDED_PLU.unitPrice}`);
+  return `lfCode=${plu.lfCode}  code=${plu.code}  price=${plu.unitPrice}  name1="${plu.name1.trim()}"  name2="${plu.name2}"`;
 });
 
 // T8-T10 reuse the session from T7's re-connect (same socket = same scale session).

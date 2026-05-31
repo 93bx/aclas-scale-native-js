@@ -16,6 +16,9 @@ export type {
 // PLU helpers
 export { buildDownloadPluPacket, decodePluRecord, encodePluRecord } from "./protocol/plu.js";
 
+// Windows-1256 (CP-1256) text encoding — used for PLU Name1/Name2 (supports Arabic).
+export { decodeCp1256, encodeCp1256 } from "./protocol/cp1256.js";
+
 // Table record helpers
 export {
   buildDeptTable,

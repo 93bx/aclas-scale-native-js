@@ -1,13 +1,46 @@
-/** One PLU row for download to the scale (512-byte wire record). Fields match Link69 UI columns. */
+/**
+ * One PLU row for download to the scale (512-byte wire record).
+ * Fields match Link69 UI columns.
+ *
+ * Text encoding (name1, name2): Windows-1256 (CP-1256). Plain ASCII is a
+ * subset, so Latin names round-trip byte-for-byte. Arabic chars (and other
+ * CP-1256 codepoints) are supported up to the 20-byte field width — note
+ * the byte count, not character count, is what's bounded. A character with
+ * no CP-1256 mapping (e.g. emoji, CJK) throws on encode.
+ */
 export interface PluRecord {
   // ── required (Link69 UI starred fields) ─────────────────────────────────
+  /**
+   * LFCode (commodity ID). Range: 0–9999.
+   *
+   * Wire encoding (capture 14B, May 2026): 2-byte BCD split across the
+   * packet header and the record body:
+   *   buf[14] = (lfCode / 100) BCD   ← high byte, in packet header
+   *   rec[0]  = (lfCode % 100) BCD   ← low byte, in record body
+   * The scale firmware stores and round-trips the full 0–9999 value
+   * (verified by capture 14's upload phase: writing LFCode 9999 returned
+   * `header[14]=0x99, rec[0]=0x99` ⇒ 9999 reconstructed correctly).
+   */
   lfCode: number;
-  /** Numeric code shown on receipts / reports. Distinct from lfCode on the wire (rec[10]). */
+  /**
+   * Numeric code shown on receipts / reports.
+   * Range: 0–999999 (6 BCD digits at rec[8-10]). The TXP file format allows
+   * up to 10 digits but the wire record only allocates 3 BCD bytes.
+   */
   code: number;
-  /** Barcode start code (BCD, e.g. 99 → 0x99). */
+  /** Barcode start code (BCD, e.g. 99 → 0x99). Range 0–99. */
   barcodeStartCode: number;
+  /** Product name (CP-1256, up to 20 bytes). */
   name1: string;
-  /** Unit price in decimal (e.g. 9.99). Encoded as 2-byte BCD on wire. */
+  /**
+   * Unit price as a raw integer 0–9999, encoded as 2-byte BCD big-endian at
+   * rec[139-140]. The value is stored on the scale as-is; decimal placement
+   * is a scale-side display setting. Examples:
+   *   - `unitPrice: 15`   → wire bytes `[0x00, 0x15]`, scale stores 15
+   *   - `unitPrice: 1500` → wire bytes `[0x15, 0x00]`, scale stores 1500
+   * Confirmed live 2026-05-31: setting `unitPrice = 1500` then reading back
+   * via the scale showed `1500` (no implicit ÷100 conversion).
+   */
   unitPrice: number;
   /** Unit ID (binary): 1=g, 4=kg. See UnitPrintRecord for custom print names. */
   unitId: number;
@@ -16,7 +49,9 @@ export interface PluRecord {
 
   // ── optional UI columns ──────────────────────────────────────────────────
   categoryId?: number;
+  /** Secondary name (CP-1256, up to 20 bytes). */
   name2?: string;
+  /** Member price as a raw integer 0–9999 (same semantics as `unitPrice`). */
   memberPrice?: number;
   /** Shelf life in days (Link69 "Shelf Date" column). */
   shelfDate?: number;
